@@ -33,6 +33,9 @@ class BP:
         self.data_cube_path_label = None
         self.path_label = None
         self.save_label = None
+        self.isLago = True
+        self.isHealthy = False
+        self.isImplan = False
 
         self.original_image_graph = None
         self.original_image_data = None
@@ -87,7 +90,7 @@ class BP:
         self._build_original_image_left(self.data1)
         self.original_image_data = self.data1 
         self.image_width = self.data1.shape[1]
-        self.coords_list = [(None, None), (None, None)]
+        self.coords_list = [(None, None), (None, None), (None, None)]
         filename = os.path.basename(dc_path)
         path = os.path.dirname(dc_path) + "/annotated/" + filename[:-4] + "_COORDINATES.csv"
         print("searching in " + path)
@@ -99,7 +102,7 @@ class BP:
                 for row in read_csv:
                     coords.append(((int(float(row[0]) - 1)), (int(float(row[1]) - 1))))
                 csvfile.close()
-                self.coords_list = coords
+                self.coords_list = [point if point[0] >=0 else (None, None) for point in coords]
             self._draw_points()
             
         
@@ -159,6 +162,9 @@ class BP:
                            upper_scale_value=None, color_rgb=BACKGROUND, original=True, figheight=3.5, figwidth=4.5, img = self.original_image, axs = self.original_image_graph, figu = self.original_image_graph)
             self.root.bind_all('<Left>', self.__prev)
             self.root.bind_all('<Right>', self.__next)
+            self.root.bind_all('<l>', self.__lago)
+            self.root.bind_all('<h>', self.__healthy)
+            self.root.bind_all('<i>', self.__implan)
             self.original_image.get_tk_widget().bind('<Button-1>', self.__get_coords)
             #self.original_image.get_tk_widget().bind('<Motion>', self.__update_cursor)
             self.original_image.get_tk_widget().focus_force()
@@ -174,7 +180,7 @@ class BP:
         self._build_counter(cc)
         
     def __add_data_cube(self, sub_dir):
-        dc_path = [sub_dir for i in [sub_dir] if ".png" in i or ".jpg"]  # takes first data cube it finds
+        dc_path = [sub_dir for i in [sub_dir] if ".png" in i or ".jpg" in i or ".heic" in i or ".heif" in i]  # takes first data cube it finds
         if len(dc_path) > 0:
             dc_path = dc_path[0]
             if dc_path in self.data_cube_paths:
@@ -210,7 +216,7 @@ class BP:
     def __trash_list(self):
         self.data_cube_paths = []
         self.selection_listbox.delete(0,'end')
-        self.coords_list = [(None, None),  (None, None)]
+        self.coords_list = [(None, None),  (None, None), (None, None)]
         self.__remove_pt('all')
         self._build_counter(len(self.data_cube_paths))
     
@@ -243,12 +249,33 @@ class BP:
         self.selection_listbox.selection_clear(0, END)
         self.selection_listbox.select_set(sel-1) #This only sets focus on the first item.
         self.selection_listbox.event_generate("<<ListboxSelect>>")
+        
+    def __lago(self, event = None):
+        self.isLago = True
+        self.isHealthy = False
+        self.isImplan = False
+        self.coords_list[0] = (None, None)
+        self._draw_points()
+    
+    def __healthy(self, event = None):
+        self.isLago = False
+        self.isHealthy = True
+        self.isImplan = False
+        self.coords_list[1] = (None, None)
+        self._draw_points()
+
+    def __implan(self, event = None):
+        self.isLago = False
+        self.isHealthy = False
+        self.isImplan = True
+        self.coords_list[2] = (None, None)
+        self._draw_points()
     
     
     # ------------------------------------------------- Saving / Loading --------------------------------------------------
                 
     def __save_points(self):
-        data = self.coords_list
+        data = [point if point[0] is not None else (-99, -99) for point in self.coords_list]
         path = os.path.dirname(self.get_selected_data_cube_path())
         filename = os.path.basename(self.get_selected_data_cube_path())[:-4]
         output_path_ = path + '/annotated/'+filename +"_COORDINATES" + '.csv'
@@ -278,27 +305,28 @@ class BP:
         conversionFactor = self.image_width/axWidth
         Xc=int((event.x-minX)*conversionFactor)
         Yc=int((event.y-minY)*conversionFactor)
-        if self.coords_list[0][0] is None:
+        if self.isLago:
             self.coords_list[0] = (Xc, Yc)
-        elif self.coords_list[1][0] is None:
+        elif self.isHealthy:
             self.coords_list[1] = (Xc, Yc)
-        else:
-            self.coords_list = [(None, None), (None, None)]
-            self.coords_list[0] = (Xc, Yc)
+        elif self.isImplan:
+            self.coords_list[2] = (Xc, Yc)
         self._draw_points()
         
     def _draw_points(self):
         if self.original_image_data is not None:
             copy_data = self.data1.copy()
-            not_none = [i for i in self.coords_list if i != (None, None) ]
-            for point in not_none:
-                y = int(point[0])
-                x = int(point[1])
-                for xi in range(-4, 5):
-                    copy_data[(x + xi) % 480, y, :3] = BRIGHT_GREEN_RGB
-                for yi in range(-4, 5):
-                    copy_data[x, (y + yi) % 640, :3] = BRIGHT_GREEN_RGB
-                idx = not_none.index(point)
+            cc = [(255, 0, 0), (0, 255, 0), (0,0,255)]
+            ii= 0
+            for point in self.coords_list:
+                if point[0] is not None:
+                    y = int(point[0])
+                    x = int(point[1])
+                    for xi in range(-4, 5):
+                        copy_data[(x + xi) % 480, y, :3] = cc[ii]
+                    for yi in range(-4, 5):
+                        copy_data[x, (y + yi) % 640, :3] = cc[ii]
+                ii = ii+1
             im = Image.fromarray(copy_data)
             self.copy_data = im
             self._build_original_image_left(np.array(im))
